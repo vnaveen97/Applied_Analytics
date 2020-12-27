@@ -1,0 +1,26 @@
+# Problem 3 (20 pts)
+
+Which month has the greatest proportion of late flights?
+
+```{r problem3}
+props = flightsNotCancelled %>% 
+  mutate(delayInd = ifelse(DEP_DELAY > 0,1,0)) %>% 
+  #### Answer 3.1 Fill in the missing part
+  summarize(total = n(),success = sum(delayInd),prop = mean(delayInd))
+
+props
+```
+
+#### Answer 3.2
+
+The month with the greatest proportion of late flights is ...
+
+
+# Problem 4 (25 pts)
+Which departure and arrival airport combination is associated with the worst median departure delay?  You're a bit on your own here.  Use the ideas from class and from this homework to answer this question.
+
+```{r problem4}
+```
+
+#### Answer 4.1
+The worst departure/arrival airport combination in terms of median delay is ... 
