@@ -1,0 +1,227 @@
+---
+title: "Homework 4"
+subtitle: 'STAT656. Due by Oct 27 at 11:59 pm'
+output: html_document
+---
+
+# Introduction
+
+A major issue with antiretroviral drugs is the mutation of the virus' genes.  Because of its high rate of replication ($10^9$ to $10^{10}$ virus per person per day) and error-prone polymerase\footnote{An enzyme that `stitches' back together DNA or RNA after replication}, HIV can easily develop mutations that alter susceptibility to antiretroviral drugs.
+
+The emergence of resistance to one or more antiretroviral drugs is one of the more common reasons for therapeutic failure in the treatment of HIV.
+
+In the paper 'Genotypic predictors of human immunodeficiency virus type 1 drug resistance'\footnote{Try to see what you can get out of it if you have the time.}, 
+a sample of in vitro\footnote{Latin for `in glass', sometimes known colloquially as a test tube}
+HIV viruses were grown and exposed to a particular antiretroviral therapy.  We have a measurement which is the susceptibility of the virus  to treatment, in which larger values indicate less susceptible. It has been log transformed.   As well, we have whether there is a genetic mutation on each of 208 genes for each virus (each virus is a different row or observation). It is composed of 0's and 1's, with a 1 indicating a mutation in a particular gene.  
+
+# Problem 1 (10 pts)
+
+```{r}
+load("hiv.rda")
+
+X = hiv.train$x
+Y = hiv.train$y
+
+geneLabels = colnames(X)
+```
+
+
+## Problem 1.1
+
+What are n and p in this problem?  
+
+#### Answer 1.1.1.
+```{r}
+Xfull = rbind(hiv.train$x, hiv.test$x)
+Yfull = c(hiv.train$y,hiv.test$y)
+n = nrow(Xfull)
+p = ncol(Xfull)
+```
+
+The number of observations is `r n` and the number of features is `r p`.
+
+#### Answer 1.1.2.
+
+What are the features in this problem?  What are the observations? What is the supervisor? What do larger values for the supervisor indicate in terms of susceptibility?
+
+208 types of genes are the features and each observation is a mutation result of a virus on the different types of genes. Supervisor is the virus susceptibility which is log-transformed. Larger values indicates less susceptibility.
+
+# Problem 2 (10 pts)
+
+Consider the feature matrix, X.  Look at the output for the following chunk of code.
+```{r}
+zerone = table(X)
+zero   = zerone[1]
+one    = zerone[2]
+```
+
+#### Answer 2.1
+
+What do these results indicate?
+
+Table counts the values at each combination of factor levels. There are a total of `r zero` **0's** and `r one` **1's**. This shows that there is very little mutation.
+
+# Problem 3 (10 pts)
+
+The supervisor is the log transformed susceptibility of a virus to the considered treatment, with large values indicating the virus is relatively more resistant (that is, not susceptible).
+
+```{r}
+hist(Y)
+```
+
+#### Answer 3.1
+
+What do these results indicate? (Note that even though the supervisor doesn't look symmetric, we will still apply elastic net to it, as did the authors in that paper I included.  We won't consider further transformations of the supervisor)
+
+Histogram represents the frequency of log-transformed viral susceptibility. Large values indicates the virus is not susceptible or resistant to mutation. This transformation tries to bring the mean and median closer and removes the skewness.
+
+# Problem 4 (70 pts)
+
+We may have (at least) two goals with a data set such as this: 
+
+* inference: can we find some genes whose mutation seems to be most related to viral susceptibility?
+* prediction: can we make a model that would predict whether this therapy would be efficacious, given a virus 
+with a set of genetic mutations
+
+
+## Problem 4.1. Inference
+
+Find the estimated coefficient vectors for the following procedures
+
+* lasso
+* refitted lasso 
+
+
+### Problem 4.1.1.  Lasso
+
+Now, find the CV minimizing lasso solution
+
+#### Answer 4.1.1. 
+
+```{r}
+require(glmnet)
+lassoOut     = cv.glmnet(X ,Y, alpha=1, standardize = FALSE) #Consider why we wouldn't standardize
+betaHatLasso = coef(lassoOut)[-1]
+Slasso       = which(abs(betaHatLasso)>1e-16)
+```
+
+### Problem 4.1.2. Refitted lasso
+
+Now, find the refitted lasso using the '1 standard error rule' lambda and refitting with least squares. I've included a plot of CV so that you can see the lambda.1se solution.
+
+#### Answer 4.1.2. 
+
+```{r}
+plot(lassoOut)
+betaHatTemp     = coef(lassoOut,s='lambda.1se')[-1]
+Srefitted       = which(abs(betaHatTemp) > 1e-16)
+Xdf             = as.data.frame(X[,Srefitted])
+refittedOut     = lm(Y ~ ., data = Xdf)
+betaHatRefitted = coef(refittedOut)
+```
+
+#### Answer 4.1.3
+
+What are the genes selected by the refitted lasso (that is, what are the 'geneLabels' (the feature names) that correspond to the nonzero coefficients in the coefficient vector)? Which gene site does the refitted lasso estimate has the most association with the supervisor?
+
+```{r}
+cat('The selected genes from refitted lasso are: \n', names(betaHatRefitted)[-1],'\n')
+
+strong = names(betaHatRefitted[which.max(abs(betaHatRefitted))])
+```
+Larger the absolute value of coefficient, stronger the association with supervisor. Gene Site `r strong` has the strong association with the supervisor.
+
+### Problem 4.1.4
+
+For the refitted lasso, which gene is associated with the largest DECREASE in viral susceptibility (note: remember how the supervisor is coded) to this particular drug? 
+
+#### Answer 4.1.4
+
+```{r}
+largeDecrease = names(which.min(betaHatRefitted))
+```
+
+Gene `r largeDecrease` is associated with the largest DECREASE in viral susceptibility.
+
+#### Answer 4.1.5
+
+Interpret this estimated coefficient within the context of the problem
+
+'A change from no mutation to mutation shows a decrease of `r betaHatRefitted[10]` in viral susceptibility'
+
+## Problem 4.2. Prediction
+
+Now, let's look at some predictions made by these methods.  Use the following for the test set:
+
+```{r}
+Xtest = hiv.test$x
+Ytest = hiv.test$y
+```
+
+Let's compute the test error (that is the loss evaluated on this test data)
+
+* ridge
+* lasso
+* refitted lasso
+
+We can get the predictions out via various 'predict' functions
+
+### Problem 4.2.1. Ridge regression at lambda.min
+
+Now that we are looking at prediction, we can use ridge regression (which mainly is used for prediction).  Using the package glmnet, let's plot the
+CV curve over the grid of lambda values and indicate the minimum, and finally report the CV estimate of the test error for ridge at each lambda.
+
+There is no need to report the p coefficient estimates from the ridge solution.
+Also, glmnet has a grid problem. The automatically allocated grid by glmnet has a minimum value that is too small and hence we get a `boundary' solution. Let's make two plots, one that shows the CV plot with and one without this boundary issue
+
+```{r}
+ridgeOut = cv.glmnet(X,Y,alpha=0)
+plot(ridgeOut) #This has the boundary issue
+
+minLambda = min(ridgeOut$lambda)
+lambdaNew = seq(minLambda, minLambda*0.01,length=100)
+ridgeOut  = cv.glmnet(x = X, y = Y, alpha = 0,lambda = lambdaNew)
+plot(ridgeOut) 
+YhatTestRidge = predict(ridgeOut, Xtest, s = 'lambda.min')
+```
+
+#### Answer 4.2.1. 
+
+Why is a boundary solution for minimizing CV an issue?
+
+The left most vertical line represents the CV minimum but the right most vertical line does not represent the largest value of lambda. When the value of lambda is low, very few coefficients are shrinked towards zero which does not fit the purpose. This causes an issue in boundary solution for minimizing cv. 
+
+### Problem 4.2.2. Lasso
+
+We can use the previously computed lasso object to get the predictions
+
+
+```{r}
+YhatTestlasso = predict(lassoOut, Xtest,s = 'lambda.min')
+```
+
+#### Answer 4.2.3. Refitted lasso 
+
+Get the predictions for the refitted lasso.  Remember, choose lambda via the 1se rule and then fit the least squares solution on the selected features.  
+
+```{r}
+XtestDF          = as.data.frame(Xtest[,Srefitted])
+refittedOut      = lm(Ytest ~ ., data = XtestDF)
+YhatTestRefitted = predict(refittedOut, XtestDF)
+```
+
+
+#### Answer 4.2.4. Getting the predictions and test error
+
+```{r}
+# Get the test error
+testErrorRidge    = mean((YhatTestRidge - Ytest)**2)
+testErrorLasso    = mean((YhatTestlasso - Ytest)**2)
+testErrorRefitted = mean((YhatTestRefitted - Ytest)**2)
+```
+
+
+
+* The prediction error from ridge + lambda.min is `r testErrorRidge`
+* The prediction error from lasso + lambda.min is `r testErrorLasso`
+* The prediction error from refitted lasso is `r testErrorRefitted`
